@@ -88,7 +88,7 @@ class AutoEncoder(nn.Module):
             print(x[i][1])
             print(x[i])
             print(x[i].shape)
-            x_decoded_mean[i] = self.Decoder.forward(x[i].clone())
+            x_decoded_mean[i] = self.Decoder.forward(x[i])
 
         return torch.from_numpy(x_decoded_mean), torch.from_numpy(z_mean), torch.from_numpy(z_log_var)
 
