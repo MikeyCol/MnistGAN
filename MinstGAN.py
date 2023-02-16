@@ -4,6 +4,8 @@
 from keras.datasets import mnist
 from matplotlib import pyplot
 import numpy as np
+from tqdm import tqdm
+
 
 import torch
 import torch.nn as nn
@@ -11,9 +13,11 @@ import torch.nn.functional as F
 import re
 import os
 import unicodedata
-import numpy as np
 
-device = torch.device("cpu")
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+
 class SamplingLayer(nn.Module):
     '''
     Custom layer used to generate a sample from the latent space
@@ -76,28 +80,31 @@ class AutoEncoder(nn.Module):
         '''
         '''
         x = self.Encoder.forward(x)
-        print(x)
-        print(x.shape)
+        #print(x)
+        #print(x.shape)
         z_mean = x[:,0]
-        print(z_mean)
+        #print(z_mean)
         z_log_var = x[:,-1]
-        print(z_log_var)
-        x_decoded_mean = np.empty(x.shape[0])
+        #print(z_log_var)
+        x_decoded_mean = []
         for i in range(x.shape[0]):
-            print(x[i][0])
-            print(x[i][1])
-            print(x[i])
-            print(x[i].shape)
-            x_decoded_mean[i] = self.Decoder.forward(x[i])
+            x_decoded_mean.append(self.Decoder.forward(x[i]))
 
-        return torch.from_numpy(x_decoded_mean), torch.from_numpy(z_mean), torch.from_numpy(z_log_var)
+        #print(torch.stack(x_decoded_mean))
+        return torch.stack(x_decoded_mean), z_mean, z_log_var
 
 def vaeLoss(x,x_decoded_mean,z_mean,z_log_var,original_dim=28*28):
     '''
     '''
     BCELoss = nn.BCELoss()
-
-    xent_loss = original_dim*BCELoss(x_decoded_mean,x)
+    
+    try:
+        xent_loss = original_dim*BCELoss(x_decoded_mean,x)
+    except:
+        print(x_decoded_mean)
+        print(torch.min(x_decoded_mean))
+        print(x)
+        print(torch.min(x))
     kl_loss = -0.5*torch.sum(1 + z_log_var - torch.square(z_mean) - torch.exp(z_log_var))
     return xent_loss + kl_loss
 
@@ -129,15 +136,19 @@ def main():
     epsilonStd = 1.0
 
     auto_model = AutoEncoder(original_dim,latent_dim,intermediate_dim)
-
+    opt = torch.optim.Adam(auto_model.parameters())
     for name,l in auto_model.named_children():
         print(f"{name}:{l}")
 
-    for epoch in range(epochs):
-        for i in range(x_train.shape[0]):
+    for epoch in tqdm(range(epochs),ascii=True,desc='Epochs'):
+        print('Epoch: ',epoch)
+        
+        for i in tqdm(range(x_train.shape[0]),ascii=True,desc='i'):
             x_decoded_mean, z_mean, z_log_var = auto_model.forward(torch.from_numpy(x_train[i]))
-            print('###################################################################')
-            i_train = torch.tensor([x_train[i] for j in range(batchSize)])
+            #print('###################################################################')
+            i_train = torch.stack([torch.tensor(x_train[i]) for j in range(batchSize)])
+            
+            '''
             print('i_train \n',i_train)
             print(i_train.shape)
             print('x_decoded_mean \n',x_decoded_mean)
@@ -146,11 +157,19 @@ def main():
             print(z_mean.shape)
             print('z_log_var \n',z_log_var)
             print(z_log_var.shape)
-            
+            '''
             loss = vaeLoss(i_train,x_decoded_mean,z_mean,z_log_var)
-            print(loss)
+            #print(loss)
             loss /= batchSize
-            print('loss: ',loss)
+            #print('loss: ',loss)
+            loss.backward()
+            opt.step()
+            opt.zero_grad()
+        print('loss: ',loss)
+    for i in range(10):
+        out = auto_model.forward(x_test[i])
+        print(out)
+        pyplot.imshow(out)
 
 if __name__ == "__main__":
     main()  
